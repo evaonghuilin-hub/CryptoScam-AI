@@ -1,0 +1,27 @@
+# Example
+
+# Data Processing
+pandas>=2.2.0
+numpy>=2.0.0
+
+# Machine Learning
+scikit-learn>=1.5.0
+joblib>=1.4.0
+
+# Visualisation
+plotly>=5.23.0
+matplotlib>=3.9.0
+
+# NLP
+wordcloud>=1.9.3
+
+# Web Application
+streamlit>=1.38.0
+
+# UI Enhancements
+streamlit-option-menu>=0.4.0
+streamlit-extras>=0.5.0
+
+# AWS (Optional)
+boto3>=1.34.0
+sagemaker>=2.230.0
