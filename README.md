@@ -51,26 +51,41 @@ Recommendation
 ## Project Structure
 
 ```
-CryptoShield-AI/
+CryptoScam-AI/
 │
 ├── app.py
 ├── requirements.txt
 ├── README.md
 │
 ├── data/
-│   └── crypto_messages.csv
+│   ├── crypto_scam_dataset.csv
+│   └── processed/
+│       ├── train.csv
+│       └── test.csv
 │
 ├── models/
+│   ├── tfidf_vectorizer.joblib
 │   ├── model_v1.joblib
-│   ├── model_v2.joblib
-│   └── best_model.joblib
+│   ├── model_v1_metrics.json
+│   ├── best_model.joblib
+│   └── MODEL_REGISTRY.md
 │
 ├── notebooks/
-│   └── training.ipynb
+│   └── 01_baseline_model.ipynb
+│
+├── pages/
+│   ├── 1_Scam_Detector.py
+│   ├── 2_About_the_Model.py
+│   └── 3_Responsible_AI.py
+│
+├── utils/
+│   ├── indicators.py
+│   ├── preprocessing.py
+│   ├── experiment_tracking.py
+│   └── model_registry.py
 │
 └── docs/
-    ├── ProjectProposal.pdf
-    └── FinalReport.pdf
+    └── iti113_project proposal_team03.pdf
 ```
 
 ---
@@ -104,6 +119,26 @@ The application will be available at:
 ```
 http://localhost:8501
 ```
+
+---
+
+## MLOps: Data Pipeline, Experiment Tracking & Model Registry
+
+- **Data pipeline** (`utils/preprocessing.py`) — cleans raw messages, builds the engineered indicator features (urgency, contact/link, structural characteristics), fits TF-IDF, and produces the train/test split. Run it directly with:
+
+  ```bash
+  python -m utils.preprocessing
+  ```
+
+- **Experiment tracking** (`utils/experiment_tracking.py`) — wraps MLflow so every training run's parameters, metrics, and model get logged consistently. Runs locally with no extra setup. View logged runs with:
+
+  ```bash
+  mlflow ui --backend-store-uri file:./mlruns --port 5000
+  ```
+
+- **Model registry** (`utils/model_registry.py`, `models/MODEL_REGISTRY.md`) — saves each trained model as a versioned file (`model_v{N}.joblib`) alongside its metrics, and tracks which version is currently deployed (`best_model.joblib`), so a prior version can be restored if a newer one underperforms.
+
+- See `notebooks/01_baseline_model.ipynb` for a worked example tying all three together.
 
 ---
 
