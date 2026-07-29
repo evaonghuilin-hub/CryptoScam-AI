@@ -71,7 +71,9 @@ CryptoScam-AI/
 │   └── MODEL_REGISTRY.md
 │
 ├── notebooks/
-│   └── 01_baseline_model.ipynb
+│   ├── 01_eda_and_data_preparation.ipynb             (data prep + S3 upload done; EDA section is a placeholder for Royston)
+│   ├── 01A_setup_sagemaker_mlflow_app_team03.ipynb   (adapted from the ITI113 course template)
+│   └── 02_baseline_experiments.ipynb                 (renamed from 01_baseline_model.ipynb, numbering now matches the course template: 01/01A = EDA + MLflow setup, 02 = baseline experiments, 03 = pipeline + registry + deploy, still to come)
 │
 ├── pages/
 │   ├── 1_Scam_Detector.py
@@ -130,15 +132,11 @@ http://localhost:8501
   python -m utils.preprocessing
   ```
 
-- **Experiment tracking** (`utils/experiment_tracking.py`) — wraps MLflow so every training run's parameters, metrics, and model get logged consistently. Runs locally with no extra setup. View logged runs with:
+- **Experiment tracking** (`utils/experiment_tracking.py`) — wraps MLflow so every training run's parameters, metrics, and model get logged consistently. Points at team03's SageMaker MLflow App (set up via `notebooks/01A_setup_sagemaker_mlflow_app_team03.ipynb`), not a local store. To view logged runs, re-run the "Get a presigned MLflow UI URL" cell in that notebook (the URL expires, so a fresh one is needed each time) and open it in a browser.
 
-  ```bash
-  mlflow ui --backend-store-uri file:./mlruns --port 5000
-  ```
+- **Model registry** (`utils/model_registry.py`, `models/MODEL_REGISTRY.md`) — saves each trained model as a versioned file (`model_v{N}.joblib`) alongside its metrics, and tracks which version is currently deployed (`best_model.joblib`), so a prior version can be restored if a newer one underperforms. This will be superseded by SageMaker's Model Registry once the pipeline notebook (03, adapted from the course template) is built.
 
-- **Model registry** (`utils/model_registry.py`, `models/MODEL_REGISTRY.md`) — saves each trained model as a versioned file (`model_v{N}.joblib`) alongside its metrics, and tracks which version is currently deployed (`best_model.joblib`), so a prior version can be restored if a newer one underperforms.
-
-- See `notebooks/01_baseline_model.ipynb` for a worked example tying all three together.
+- See `notebooks/02_baseline_experiments.ipynb` for a worked example tying data pipeline + experiment tracking + model registry together.
 
 ---
 
