@@ -1,0 +1,13 @@
+{
+    "team_id": "team03",
+    "student_id": "s301",
+    "project_name": "crypto-scam-detector",
+    "best_run_id": "abde6cc1831349c8b2f3d27b514cde22",
+    "best_run_name": "rf_candidate_05",
+    "best_auc": 1.0,
+    "best_model_uri": "runs:/abde6cc1831349c8b2f3d27b514cde22/model",
+    "mlflow_tracking_uri": "arn:aws:sagemaker:ap-southeast-1:044528205969:mlflow-app/app-J5AYUG4AJHVW",
+    "mlflow_experiment": "ITI113/team03/Experiment1",
+    "tracking_backend": "sagemaker_mlflow_app",
+    "mlflow_app_team_tag": "team03"
+}
