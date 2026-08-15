@@ -1,8 +1,8 @@
 {
-  "pipeline_execution_arn": "arn:aws:sagemaker:ap-southeast-1:044528205969:pipeline/iti113-team03-crypto-scam-detector/execution/yypz4zg5vh1s",
-  "training_job_name": "pipelines-yypz4zg5vh1s-TrainModel-RomNQVVFLc",
-  "training_job_arn": "arn:aws:sagemaker:ap-southeast-1:044528205969:training-job/pipelines-yypz4zg5vh1s-TrainModel-RomNQVVFLc",
-  "model_artifact_s3_uri": "s3://sagemaker-ap-southeast-1-044528205969/pipelines-yypz4zg5vh1s-TrainModel-RomNQVVFLc/output/model.tar.gz",
+  "pipeline_execution_arn": "arn:aws:sagemaker:ap-southeast-1:044528205969:pipeline/iti113-team03-crypto-scam-detector/execution/q6bopx89otod",
+  "training_job_name": "pipelines-q6bopx89otod-TrainModel-x2MZjq5byE",
+  "training_job_arn": "arn:aws:sagemaker:ap-southeast-1:044528205969:training-job/pipelines-q6bopx89otod-TrainModel-x2MZjq5byE",
+  "model_artifact_s3_uri": "s3://sagemaker-ap-southeast-1-044528205969/pipelines-q6bopx89otod-TrainModel-x2MZjq5byE/output/model.tar.gz",
   "metrics": {
     "test_auc_roc": 0.8899999856948853,
     "test_accuracy": 0.7713000178337097,
@@ -21,7 +21,7 @@
     "sagemaker_container_log_level": "20",
     "sagemaker_program": "\"train.py\"",
     "sagemaker_region": "\"ap-southeast-1\"",
-    "sagemaker_submit_directory": "\"s3://sagemaker-ap-southeast-1-044528205969/iti113-team03-s301-train-2026-08-15-03-57-53-399/source/sourcedir.tar.gz\"",
+    "sagemaker_submit_directory": "\"s3://sagemaker-ap-southeast-1-044528205969/iti113-team03-s301-train-2026-08-15-15-42-08-649/source/sourcedir.tar.gz\"",
     "semester": "\"26S1\"",
     "solver": "lbfgs",
     "student-id": "\"s301\"",
