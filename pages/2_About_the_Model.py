@@ -29,15 +29,15 @@ st.markdown(
     """
 )
 
-st.subheader("Candidate Models")
+st.subheader("Models Evaluated")
 
 st.markdown(
     """
-    - Logistic Regression
-    - Naive Bayes
-    - Support Vector Machine
-    - Decision Tree
-    - Random Forest
+    - **Logistic Regression** — selected model (test ROC-AUC 0.891)
+    - **Random Forest** — evaluated for comparison (test ROC-AUC 0.860)
+
+    Naive Bayes, Support Vector Machines and Decision Trees were considered in
+    the project proposal but have not been evaluated at this stage.
     """
 )
 
@@ -49,8 +49,7 @@ st.markdown(
     - Precision
     - Recall
     - F1-score
-    - ROC-AUC
-    - Precision–Recall AUC
+    - ROC-AUC (used as the model registry quality gate, threshold 0.85)
     """
 )
 

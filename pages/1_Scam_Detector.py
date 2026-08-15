@@ -59,8 +59,10 @@ if analyse_clicked:
     else:
         warning_signs = detect_warning_signs(message)
 
-        # Temporary placeholder logic.
-        # Replace this later with Royston's trained ML model.
+        # Placeholder logic pending endpoint integration.
+        # To be replaced with a call to the deployed SageMaker Serverless
+        # Endpoint (iti113-team03-crypto-scam-detector) using the
+        # invoke_scam_detector() pattern from Notebook 04.
         indicator_count = len(warning_signs)
 
         if indicator_count >= 3:
