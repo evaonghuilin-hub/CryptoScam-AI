@@ -26,7 +26,7 @@ This project was developed as part of the **Nanyang Polytechnic Specialist Diplo
 ## Features
 
 - Detects cryptocurrency scam messages from raw text
-- TF-IDF text vectorisation plus 18 engineered indicator features
+- TF-IDF text vectorisation plus 15 engineered indicator features
 - Risk level assessment (Low / Medium / High) with a scam probability score
 - Suspicious keyword and pattern detection for user-facing explanation
 - Responsible AI guidance and referral to official reporting channels
@@ -44,9 +44,10 @@ Kaggle dataset
       ▼
 S3 raw/  ──►  SageMaker Pipeline
                  │
-                 ├─ PreprocessData   clean text, 18 engineered features,
+                 ├─ PreprocessData   clean text, 15 engineered features,
                  │                   TF-IDF fitted on the training split only
-                 ├─ TrainModel       Random Forest; metrics captured by SageMaker
+                 ├─ TrainModel       Logistic Regression (C=10.0, L2, lbfgs);
+                 │                   metrics captured by SageMaker
                  ├─ AUCQualityGate   registration only if test AUC-ROC >= 0.85
                  └─ RegisterModel    SageMaker Model Registry
                                      (PendingManualApproval — human approval required)
@@ -68,7 +69,8 @@ watched S3 prefix trigger a retraining run of the same pipeline.
 CryptoScam-AI/
 │
 ├── app.py                    Streamlit entry point
-├── requirements.txt
+├── requirements.txt           Streamlit app dependencies
+├── requirements-notebooks.txt Notebook / SageMaker / MLflow dependencies
 ├── README.md
 │
 ├── data/
@@ -84,7 +86,9 @@ CryptoScam-AI/
 │   ├── 02_baseline_experiments_sagemaker_mlflow_app_with_team03.ipynb
 │   ├── 03_sagemaker_pipeline_mlflow_app_with_preprocessing_bundle_team03.ipynb
 │   ├── 04_test_serverless_endpoint_team03.ipynb
-│   └── 05_s3_trigger_cicd_team03.ipynb
+│   ├── 05_s3_trigger_cicd_team03.ipynb
+│   └── best_model.json, mlflow_app_config_team03_s301.json,
+│       sagemaker_pipeline_run_summary.json   state saved between notebook runs
 │
 ├── pages/
 │   ├── 1_Scam_Detector.py
@@ -94,7 +98,9 @@ CryptoScam-AI/
 ├── utils/
 │   └── indicators.py         keyword/pattern detection used by the Streamlit app
 │
-├── assets/screenshots/       MLflow, Model Registry, pipeline and endpoint evidence
+├── assets/
+│   ├── screenshots/           MLflow, Model Registry, pipeline and endpoint evidence
+│   └── system architecture diagram/   editable Word diagram of the full pipeline
 │
 └── docs/
     └── iti113_project proposal_team03.pdf
@@ -104,15 +110,21 @@ CryptoScam-AI/
 TF-IDF vectoriser and trained model artifacts are stored in S3 and the SageMaker Model
 Registry rather than in version control, so that lineage is tracked by the platform.
 
+**Note:** `preprocess.py`, `train.py` and `inference.py` are not committed to this repo as
+standalone files — they are written by the notebooks (`%%writefile`) into a local
+`pipeline_src/` folder during a SageMaker Studio session, then uploaded to the S3 prefix
+`pipeline_src/` that both pipelines re-download from. The notebooks are the source of truth
+for this code.
+
 ---
 
 ## Notebooks
 
 | Notebook | Purpose |
 |---|---|
-| **01** | EDA, data quality checks, and the data pipeline: SHA256 raw-data versioning with an `_latest.json` pointer, text cleaning, 18 engineered indicator features, stratified 80/20 split, and TF-IDF fitted on the training split only. Outputs are written to S3. |
+| **01** | EDA, data quality checks, and the data pipeline: SHA256 raw-data versioning with an `_latest.json` pointer, text cleaning, 15 engineered indicator features, stratified 80/20 split, and TF-IDF fitted on the training split only. Outputs are written to S3. |
 | **01A** | Creates or reuses the team's SageMaker MLflow App with the tags that drive team-level IAM access control, and verifies logging end to end. |
-| **02** | Baseline experiments: Logistic Regression and Random Forest, plus a five-candidate hyperparameter sweep, all logged to the team MLflow experiment. |
+| **02** | Baseline experiments: Logistic Regression and Random Forest, plus a hyperparameter sweep (6 Logistic Regression + 5 Random Forest candidates), all logged to the team MLflow experiment. |
 | **03** | SageMaker Pipeline (Preprocess → Train → AUC quality gate → Register), post-run MLflow logging, model approval, and serverless endpoint deployment. |
 | **04** | Endpoint verification: confirms `InService`, traces the endpoint back to its Model Registry package, and tests single and batch invocation. |
 | **05** | S3-triggered retraining: a watched S3 prefix starts the same pipeline automatically when new data arrives. |
@@ -127,14 +139,25 @@ Clone the repository:
 git clone https://github.com/evaonghuilin-hub/CryptoScam-AI.git
 ```
 
-Install the required packages:
+Install the packages needed to run the Streamlit app:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-The notebooks additionally require AWS credentials with access to the team's SageMaker
-resources, and are intended to be run in SageMaker Studio.
+If you also want to open and read the notebooks locally (e.g. to review the data
+pipeline, training or pipeline-orchestration code), install the notebook stack too:
+
+```bash
+pip install -r requirements-notebooks.txt
+```
+
+Note that installing `requirements-notebooks.txt` lets you read and lint the notebooks,
+but does not make them runnable end-to-end on a plain local machine — Notebooks 01, 01A,
+02, 03 and 05 call `sagemaker.get_execution_role()`, which only resolves inside a
+SageMaker Studio environment with an attached execution role, and require AWS credentials
+with access to the team's SageMaker resources. They are intended to be run in SageMaker
+Studio, where they additionally self-install a few packages in their own setup cells.
 
 ---
 
@@ -183,20 +206,23 @@ to use is `invoke_scam_detector()` in Notebook 04.
 
 ## Models Evaluated
 
-Logistic Regression and Random Forest were trained and compared, followed by a
-five-candidate Random Forest hyperparameter sweep. The best configuration
-(`n_estimators=200, max_depth=8, min_samples_leaf=2`) is the one used by the SageMaker
-Pipeline. Naive Bayes, SVM and neural networks were considered in the project proposal but
-have not been evaluated at this stage.
+Logistic Regression and Random Forest were trained and compared as baselines, followed by
+a hyperparameter sweep of 6 Logistic Regression candidates (regularisation strength and
+penalty type) and 5 Random Forest candidates (tree count, depth, leaf size). The best
+Logistic Regression candidate (`C=10.0`, `penalty=l2`, `solver=lbfgs`) reached test
+ROC-AUC 0.8908 versus the best Random Forest candidate's 0.86, and is the configuration
+used by the SageMaker Pipeline. Naive Bayes, SVM and neural networks were considered in
+the project proposal but have not been evaluated at this stage.
 
 ---
 
-## Known Limitations (as of 14 Aug)
+## Known Limitations (as of 16 Aug)
 
-- **The dataset appears to be synthetically generated.** Models score near-perfect AUC.
-  The code was audited for leakage and none was found; n-gram analysis shows repeated
-  template fragments, which makes the classes close to linearly separable. Results should
-  not be taken as evidence of real-world performance without validation on genuine data.
+- **The dataset appears to be synthetically generated.** Models score consistently high
+  AUC (0.8446–0.8908 across all four baseline/tuned runs). The code was audited for
+  leakage and none was found; n-gram analysis shows repeated template fragments, which
+  makes the classes close to linearly separable. Results should not be taken as evidence
+  of real-world performance without validation on genuine data.
 - **The Streamlit client is not yet wired to the endpoint** and returns placeholder values.
 - **The retraining trigger is a proof-of-concept.** It polls from a notebook, so it only
   runs while that notebook is running, and its state is stored locally.
