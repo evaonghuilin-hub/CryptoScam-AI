@@ -1,9 +1,24 @@
 import random
+from urllib.parse import quote
 
 import requests
 import streamlit as st
 
 from utils.indicators import detect_warning_signs
+
+FEEDBACK_EMAIL = "cryptoscam-ai-team03@gmail.com"  # placeholder address for demo purposes
+
+
+def feedback_mailto(message, label, probability):
+    """Build a mailto: link pre-filled with the message and prediction, so feedback
+    on a specific wrong prediction is actionable rather than just 'it was wrong'."""
+    subject = quote("CryptoShield AI - Prediction Feedback")
+    body = quote(
+        f"Message analysed:\n{message}\n\n"
+        f"Model prediction: {label} ({probability:.0%})\n\n"
+        f"What did the model get wrong, or what should we know?\n"
+    )
+    return f"mailto:{FEEDBACK_EMAIL}?subject={subject}&body={body}"
 
 
 st.set_page_config(
@@ -46,6 +61,20 @@ with st.sidebar:
         "relay restarted after it, or the baseline comparison will show an error."
     )
 
+    if st.button("Check Connection"):
+        health_url = relay_url.rstrip("/")
+        if health_url.endswith("/predict"):
+            health_url = health_url[: -len("/predict")]
+        health_url = health_url + "/health"
+        try:
+            health_response = requests.get(health_url, timeout=10)
+            if health_response.status_code == 200:
+                st.success("Relay reachable")
+            else:
+                st.error(f"Relay returned status {health_response.status_code}")
+        except Exception as e:
+            st.error(f"Could not reach relay: {e}")
+
 SAMPLE_MESSAGES = [
     "Act now! Deposit 500 USDT today and receive guaranteed returns. "
     "Contact our Telegram adviser immediately at https://example.com.",
@@ -83,6 +112,9 @@ SAMPLE_MESSAGES = [
 if "message_text" not in st.session_state:
     st.session_state.message_text = ""
 
+if "analysis_history" not in st.session_state:
+    st.session_state.analysis_history = []
+
 col1, col2 = st.columns([1, 4])
 
 with col1:
@@ -110,7 +142,13 @@ analyse_clicked = st.button(
 
 
 def call_relay(url, api_key, text):
-    """Call a relay /predict route. Returns (label, probability, error_message)."""
+    """Call a relay /predict route. Returns (label, probability, top_features, error_message).
+
+    top_features is a list of {feature, contribution, direction} dicts from the
+    model's coefficient-based explanation (added to inference.py). Older deployed
+    endpoints won't include this field yet, so it defaults to an empty list rather
+    than raising, and callers should treat an empty list as "not available" rather
+    than "no signal"."""
     try:
         response = requests.post(
             url,
@@ -122,16 +160,16 @@ def call_relay(url, api_key, text):
             timeout=30,
         )
     except Exception as e:
-        return None, None, f"Could not reach the model relay: {e}"
+        return None, None, [], f"Could not reach the model relay: {e}"
 
     if response.status_code != 200:
-        return None, None, f"Relay returned status {response.status_code}: {response.text}"
+        return None, None, [], f"Relay returned status {response.status_code}: {response.text}"
 
     try:
         result = response.json()[0]
-        return result["label"], result["probability"], None
+        return result["label"], result["probability"], result.get("top_features", []), None
     except Exception as e:
-        return None, None, f"Unexpected response shape from relay: {e}"
+        return None, None, [], f"Unexpected response shape from relay: {e}"
 
 
 def risk_level_for(probability):
@@ -156,7 +194,7 @@ if analyse_clicked:
         # relay set up in Notebook 06, using the same {"text": ...} request
         # and [{"prediction", "label", "probability"}] response shape as
         # invoke_scam_detector() in Notebook 03 Section 6.
-        champ_label, champ_probability, champ_error = call_relay(
+        champ_label, champ_probability, champ_top_features, champ_error = call_relay(
             relay_url, relay_api_key, message
         )
 
@@ -169,11 +207,11 @@ if analyse_clicked:
             baseline_url = None
 
         if baseline_url:
-            base_label, base_probability, base_error = call_relay(
+            base_label, base_probability, base_top_features, base_error = call_relay(
                 baseline_url, relay_api_key, message
             )
         else:
-            base_label, base_probability = None, None
+            base_label, base_probability, base_top_features = None, None, []
             base_error = "Relay Predict URL does not end in /predict — could not derive the baseline route."
 
         st.markdown("---")
@@ -224,6 +262,40 @@ if analyse_clicked:
                     "result does not guarantee that the message is legitimate."
                 )
 
+            st.link_button(
+                "📧 This prediction looks wrong — report it",
+                feedback_mailto(message, champ_label, champ_probability),
+            )
+
+            if champ_top_features:
+                with st.expander("🔎 Why this prediction? (model explainability)"):
+                    st.caption(
+                        "The words and patterns that pushed the model's score most, based "
+                        "on each feature's value multiplied by its learned coefficient. "
+                        "This is a lightweight approximation for a linear model, not a "
+                        "full SHAP-style explanation."
+                    )
+                    for feat in champ_top_features:
+                        arrow = "🔺" if feat["direction"] == "scam" else "🔻"
+                        st.write(
+                            f"{arrow} `{feat['feature']}` — pushed toward "
+                            f"**{feat['direction']}** (contribution: {feat['contribution']:+.3f})"
+                        )
+
+            st.session_state.analysis_history.insert(
+                0,
+                {
+                    "Message": (message[:70] + "…") if len(message) > 70 else message,
+                    "Champion": f"{champ_label} ({champ_probability:.0%})",
+                    "Baseline": (
+                        f"{base_label} ({base_probability:.0%})"
+                        if base_label is not None
+                        else "—"
+                    ),
+                    "Risk Level": risk_level,
+                },
+            )
+
         st.subheader("Champion vs Baseline")
 
         st.caption(
@@ -258,6 +330,26 @@ if analyse_clicked:
             "prediction for user-facing explanation."
         )
 
+        if not champ_error:
+            model_flagged_scam = champ_label.lower() == "scam"
+            if model_flagged_scam and warning_signs:
+                st.info(
+                    f"The model's **{champ_label}** prediction is consistent with "
+                    f"{len(warning_signs)} rule-based indicator "
+                    f"{'category' if len(warning_signs) == 1 else 'categories'} found below."
+                )
+            elif model_flagged_scam and not warning_signs:
+                st.warning(
+                    f"The model predicted **{champ_label}**, but no rule-based indicators "
+                    "were detected — this may reflect a subtler pattern in the message "
+                    "text (e.g. TF-IDF wording) rather than an obvious keyword match."
+                )
+            elif not model_flagged_scam and warning_signs:
+                st.warning(
+                    f"The model predicted **{champ_label}**, but some rule-based "
+                    "indicators were still found below — worth a second look."
+                )
+
         if warning_signs:
             for category, matches in warning_signs.items():
                 with st.expander(f"⚠️ {category}", expanded=True):
@@ -282,3 +374,16 @@ if analyse_clicked:
             "a Logistic Regression model served via a temporary demo endpoint and "
             "should not be treated as a definitive judgement."
         )
+
+if st.session_state.analysis_history:
+    st.markdown("---")
+    st.subheader("Session History")
+    st.caption(
+        "Messages analysed so far this session, most recent first — useful for "
+        "comparing several results side by side without re-running each one."
+    )
+    st.dataframe(st.session_state.analysis_history, use_container_width=True, hide_index=True)
+
+    if st.button("Clear History"):
+        st.session_state.analysis_history = []
+        st.rerun()

@@ -58,3 +58,23 @@ st.write(
     rolled back if a newer model performs worse.
     """
 )
+
+st.subheader("Feedback and Continuous Improvement")
+
+st.write(
+    """
+    Human oversight does not end at deployment. If a prediction looks wrong, or a
+    scam tactic slips through undetected, that feedback is valuable input for future
+    retraining rather than something the system can act on itself.
+    """
+)
+
+st.link_button(
+    "📧 Report a wrong prediction or leave feedback",
+    "mailto:cryptoscam-ai-team03@gmail.com?subject=CryptoShield%20AI%20Feedback",
+)
+
+st.caption(
+    "This is a placeholder address for demo purposes. On the Scam Detector page, "
+    "the feedback link pre-fills the message and prediction for easier review."
+)
