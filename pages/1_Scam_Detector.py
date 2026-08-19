@@ -39,19 +39,25 @@ st.write(
     """
 )
 
+if "relay_url" not in st.session_state:
+    st.session_state.relay_url = "https://your-ngrok-url.ngrok-free.app/predict"
+if "relay_api_key" not in st.session_state:
+    st.session_state.relay_api_key = "team03-demo-key"
+
 with st.sidebar:
     st.subheader("Model Endpoint Settings")
     st.caption(
         "Values from Notebook 06 (FastAPI + ngrok relay), Section 9. "
-        "The ngrok URL changes each time the relay is restarted."
+        "The ngrok URL changes each time the relay is restarted. Kept in "
+        "session state so it survives switching between pages."
     )
     relay_url = st.text_input(
         "Relay Predict URL (champion model)",
-        value="https://your-ngrok-url.ngrok-free.app/predict",
+        key="relay_url",
     )
     relay_api_key = st.text_input(
         "Relay API Key",
-        value="team03-demo-key",
+        key="relay_api_key",
         type="password",
     )
     st.caption(
