@@ -19,7 +19,7 @@ This project was developed as part of the **Nanyang Polytechnic Specialist Diplo
 | SageMaker Pipeline with quality gate and Model Registry | Complete |
 | Serverless inference endpoint | Deployed, `InService` |
 | S3-triggered retraining (CI/CD) | Proof-of-concept, proven end-to-end |
-| Streamlit client | Built; **note: still using placeholder prediction logic** pending endpoint integration |
+| Streamlit client | Built and wired to both the champion and baseline endpoints via a FastAPI + ngrok relay (Notebook 06); shows a live champion vs baseline comparison |
 
 ---
 
@@ -36,7 +36,8 @@ This project was developed as part of the **Nanyang Polytechnic Specialist Diplo
 
 ## Architecture
 
-Training and retraining run on AWS; the Streamlit client calls a serverless endpoint for inference.
+Training and retraining run on AWS; the Streamlit client calls a serverless endpoint for
+inference through a temporary FastAPI + ngrok relay, so the app never holds AWS credentials.
 
 ```
 Kaggle dataset
@@ -53,13 +54,26 @@ S3 raw/  ──►  SageMaker Pipeline
                                      (PendingManualApproval — human approval required)
                                             │
                                             ▼
-                              SageMaker Serverless Endpoint
-                                            │
-      Streamlit client  ──► {"text": "..."} ──► {"prediction", "label", "probability"}
+           ┌── SageMaker Serverless Endpoint (champion, C=10.0)
+           │              │
+Same pipeline re-run      │
+with C=1.0 ──► SageMaker Serverless Endpoint (baseline)
+           │              │
+           └──────┬───────┘
+                   ▼
+     FastAPI relay (SageMaker Studio, Notebook 06)
+        POST /predict (champion) · POST /predict/baseline
+                   │  ngrok HTTPS tunnel
+                   ▼
+ Streamlit client ──► {"text": "..."} ──► {"prediction", "label", "probability"}
+                       shown side by side: champion vs baseline
 ```
 
-Experiment runs are tracked in the team's SageMaker MLflow App. New CSV files landing in a
-watched S3 prefix trigger a retraining run of the same pipeline.
+The relay runs inside SageMaker Studio and calls both endpoints using the SageMaker
+execution role; the Streamlit app only ever holds the relay's public ngrok URL and a shared
+API key, never AWS credentials, and derives the baseline route from the champion URL
+automatically. Experiment runs are tracked in the team's SageMaker MLflow App. New CSV files
+landing in a watched S3 prefix trigger a retraining run of the same pipeline.
 
 ---
 
@@ -85,8 +99,8 @@ CryptoScam-AI/
 │   ├── 01A_setup_sagemaker_mlflow_app_team03.ipynb
 │   ├── 02_baseline_experiments_sagemaker_mlflow_app_with_team03.ipynb
 │   ├── 03_sagemaker_pipeline_mlflow_app_with_preprocessing_bundle_team03.ipynb
-│   ├── 04_test_serverless_endpoint_team03.ipynb
 │   ├── 05_s3_trigger_cicd_team03.ipynb
+│   ├── 06_fastapi_ngrok_relay_team03.ipynb
 │   └── best_model.json, mlflow_app_config_team03_s301.json,
 │       sagemaker_pipeline_run_summary.json   state saved between notebook runs
 │
@@ -125,9 +139,11 @@ for this code.
 | **01** | EDA, data quality checks, and the data pipeline: SHA256 raw-data versioning with an `_latest.json` pointer, text cleaning, 15 engineered indicator features, stratified 80/20 split, and TF-IDF fitted on the training split only. Outputs are written to S3. |
 | **01A** | Creates or reuses the team's SageMaker MLflow App with the tags that drive team-level IAM access control, and verifies logging end to end. |
 | **02** | Baseline experiments: Logistic Regression and Random Forest, plus a hyperparameter sweep (6 Logistic Regression + 5 Random Forest candidates), all logged to the team MLflow experiment. |
-| **03** | SageMaker Pipeline (Preprocess → Train → AUC quality gate → Register), post-run MLflow logging, model approval, and serverless endpoint deployment. |
-| **04** | Endpoint verification: confirms `InService`, traces the endpoint back to its Model Registry package, and tests single and batch invocation. |
+| **03** | SageMaker Pipeline (Preprocess → Train → AUC quality gate → Register), post-run MLflow logging, model approval, and champion serverless endpoint deployment (Sections 1–5); endpoint verification — `InService` check, Model Registry traceability, single and batch invocation (Section 6); a second pipeline execution with baseline (untuned) hyperparameters, deployed to a separate endpoint for live champion-vs-baseline comparison in the demo (Section 7). |
 | **05** | S3-triggered retraining: a watched S3 prefix starts the same pipeline automatically when new data arrives. |
+| **06** | FastAPI + ngrok relay: exposes both the champion and baseline endpoints to the Streamlit app over HTTPS without sharing AWS credentials, using the same request/response shape validated in Notebook 03 Section 6. |
+
+Notebooks 04 (endpoint verification) and 07 (baseline endpoint deployment) have been folded into Notebook 03 (Sections 6 and 7) — both were direct continuations of the deployment done there, not distinct MLOps stages.
 
 ---
 
@@ -169,9 +185,13 @@ streamlit run app.py
 
 The application will be available at `http://localhost:8501`.
 
-**Note:** the Scam Detector page currently returns placeholder probabilities derived from
-keyword counts. Connecting it to the deployed endpoint is outstanding work; the exact call
-to use is `invoke_scam_detector()` in Notebook 04.
+**Before analysing a message**, run Notebook 06 in SageMaker Studio to start the FastAPI
+relay and ngrok tunnel, then paste the printed `/predict` URL and the relay API key into
+the Scam Detector page's sidebar. Free ngrok URLs change each time the tunnel restarts, so
+this needs to be redone whenever Notebook 06 is re-run (e.g. before a demo or presentation).
+The baseline model's route is derived automatically from the same URL — it only returns
+results once Notebook 03 Section 7 has been run to deploy the baseline endpoint; until then
+the Champion vs Baseline panel shows a clear "not deployed yet" message rather than an error.
 
 ---
 
@@ -197,6 +217,11 @@ to use is `invoke_scam_detector()` in Notebook 04.
 - **Deployment** — approved models are deployed to a SageMaker Serverless Endpoint that
   accepts raw message text and returns a label and probability. Preprocessing is bundled
   with the model, so the endpoint applies the same TF-IDF vocabulary learned during training.
+  A second endpoint, deployed from a baseline (untuned) run of the same pipeline (Notebook
+  03, Section 7), lets the demo show champion vs baseline live inference side by side. A
+  FastAPI relay (Notebook 06), exposed over ngrok, sits between both endpoints and the
+  Streamlit client so the client never needs AWS credentials — this mirrors the FastAPI +
+  ngrok pattern taught for external endpoint access.
 
 - **Retraining trigger** — CSV files placed in a watched S3 prefix start the pipeline
   automatically with that file as input. The trigger is a polling loop rather than a
@@ -216,18 +241,22 @@ the project proposal but have not been evaluated at this stage.
 
 ---
 
-## Known Limitations (as of 16 Aug)
+## Known Limitations (as of 19 Aug)
 
 - **The dataset appears to be synthetically generated.** Models score consistently high
   AUC (0.8446–0.8908 across all four baseline/tuned runs). The code was audited for
   leakage and none was found; n-gram analysis shows repeated template fragments, which
   makes the classes close to linearly separable. Results should not be taken as evidence
   of real-world performance without validation on genuine data.
-- **The Streamlit client is not yet wired to the endpoint** and returns placeholder values.
+- **The FastAPI + ngrok relay is a temporary demo mechanism**, not a production deployment
+  path. It must be running (in SageMaker Studio) for the Streamlit app to get live
+  predictions, and the free ngrok URL changes every time the relay is restarted.
 - **The retraining trigger is a proof-of-concept.** It polls from a notebook, so it only
   runs while that notebook is running, and its state is stored locally.
-- **A failed quality gate is currently silent** — the pipeline completes without
-  registering a model rather than reporting a failure.
+- **The baseline endpoint (Notebook 03, Section 7) is a demo-only addition**, deployed
+  purely so the UI can show a live champion vs baseline comparison — it isn't part of the
+  production-facing serving path and can be deleted after a demo/presentation to avoid
+  leaving it running unnecessarily.
 
 ---
 
@@ -248,6 +277,8 @@ Users should note that:
 ## Future Improvements
 
 - Validation against real-world scam data
+- Production-grade external access (API Gateway + Lambda) in place of the temporary
+  FastAPI + ngrok relay
 - Event-driven retraining trigger (EventBridge and Lambda)
 - Production monitoring for model drift and platform-level recall
 - Multi-language scam detection
