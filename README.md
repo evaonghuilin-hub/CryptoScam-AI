@@ -17,9 +17,9 @@ This project was developed as part of the **Nanyang Polytechnic Specialist Diplo
 | Experiment tracking (SageMaker MLflow App) | Complete |
 | Baseline models (Logistic Regression, Random Forest) and tuning sweep | Complete |
 | SageMaker Pipeline with quality gate and Model Registry | Complete |
-| Serverless inference endpoint | Deployed, `InService` |
+| Serverless inference endpoint | Deployed, `InService`, returning predictions with per-prediction explanations |
 | S3-triggered retraining (CI/CD) | Proof-of-concept, proven end-to-end |
-| Streamlit client | Built and wired to both the champion and baseline endpoints via a FastAPI + ngrok relay (Notebook 06); shows a live champion vs baseline comparison |
+| Streamlit client | Built and wired to the deployed endpoint via a FastAPI + ngrok relay (Notebook 06) |
 
 ---
 
@@ -29,6 +29,9 @@ This project was developed as part of the **Nanyang Polytechnic Specialist Diplo
 - TF-IDF text vectorisation plus 15 engineered indicator features
 - Risk level assessment (Low / Medium / High) with a scam probability score
 - Suspicious keyword and pattern detection for user-facing explanation
+- Per-prediction explainability: the endpoint returns the features that contributed
+  most to each score (feature value x model coefficient), shown in plain English in the app
+- User feedback links for reporting incorrect predictions
 - Responsible AI guidance and referral to official reporting channels
 - Interactive Streamlit interface
 
@@ -54,26 +57,20 @@ S3 raw/  ──►  SageMaker Pipeline
                                      (PendingManualApproval — human approval required)
                                             │
                                             ▼
-           ┌── SageMaker Serverless Endpoint (champion, C=10.0)
-           │              │
-Same pipeline re-run      │
-with C=1.0 ──► SageMaker Serverless Endpoint (baseline)
-           │              │
-           └──────┬───────┘
-                   ▼
-     FastAPI relay (SageMaker Studio, Notebook 06)
-        POST /predict (champion) · POST /predict/baseline
-                   │  ngrok HTTPS tunnel
-                   ▼
- Streamlit client ──► {"text": "..."} ──► {"prediction", "label", "probability"}
-                       shown side by side: champion vs baseline
+                       SageMaker Serverless Endpoint
+                                            │
+                                            ▼
+                FastAPI relay (SageMaker Studio, Notebook 06)
+                                POST /predict
+                                            │  ngrok HTTPS tunnel
+                                            ▼
+       Streamlit client ──► {"text": "..."} ──► {"prediction", "label", "probability"}
 ```
 
-The relay runs inside SageMaker Studio and calls both endpoints using the SageMaker
+The relay runs inside SageMaker Studio and calls the endpoint using the SageMaker
 execution role; the Streamlit app only ever holds the relay's public ngrok URL and a shared
-API key, never AWS credentials, and derives the baseline route from the champion URL
-automatically. Experiment runs are tracked in the team's SageMaker MLflow App. New CSV files
-landing in a watched S3 prefix trigger a retraining run of the same pipeline.
+API key, never AWS credentials. Experiment runs are tracked in the team's SageMaker MLflow App.
+New CSV files landing in a watched S3 prefix trigger a retraining run of the same pipeline.
 
 ---
 
@@ -88,8 +85,8 @@ CryptoScam-AI/
 ├── README.md
 │
 ├── data/
-│   ├── crypto_scam_dataset.csv
-│   └── processed/            empty by design — processed artifacts live in S3
+│   └── processed/            empty by design — raw and processed data are versioned
+│                             in S3 (Notebook 01 re-downloads from Kaggle each run)
 │
 ├── models/                   empty by design — model artifacts are held in the
 │                             SageMaker Model Registry and S3, not committed to git
@@ -139,11 +136,11 @@ for this code.
 | **01** | EDA, data quality checks, and the data pipeline: SHA256 raw-data versioning with an `_latest.json` pointer, text cleaning, 15 engineered indicator features, stratified 80/20 split, and TF-IDF fitted on the training split only. Outputs are written to S3. |
 | **01A** | Creates or reuses the team's SageMaker MLflow App with the tags that drive team-level IAM access control, and verifies logging end to end. |
 | **02** | Baseline experiments: Logistic Regression and Random Forest, plus a hyperparameter sweep (6 Logistic Regression + 5 Random Forest candidates), all logged to the team MLflow experiment. |
-| **03** | SageMaker Pipeline (Preprocess → Train → AUC quality gate → Register), post-run MLflow logging, model approval, and champion serverless endpoint deployment (Sections 1–5); endpoint verification — `InService` check, Model Registry traceability, single and batch invocation (Section 6); a second pipeline execution with baseline (untuned) hyperparameters, deployed to a separate endpoint for live champion-vs-baseline comparison in the demo (Section 7). |
+| **03** | SageMaker Pipeline (Preprocess → Train → AUC quality gate → Register), post-run MLflow logging, model approval, and serverless endpoint deployment (Sections 1–5); endpoint verification — `InService` check, Model Registry traceability, single and batch invocation (Section 6). |
 | **05** | S3-triggered retraining: a watched S3 prefix starts the same pipeline automatically when new data arrives. |
-| **06** | FastAPI + ngrok relay: exposes both the champion and baseline endpoints to the Streamlit app over HTTPS without sharing AWS credentials, using the same request/response shape validated in Notebook 03 Section 6. |
+| **06** | FastAPI + ngrok relay: exposes the deployed endpoint to the Streamlit app over HTTPS without sharing AWS credentials, using the same request/response shape validated in Notebook 03 Section 6. |
 
-Notebooks 04 (endpoint verification) and 07 (baseline endpoint deployment) have been folded into Notebook 03 (Sections 6 and 7) — both were direct continuations of the deployment done there, not distinct MLOps stages.
+Notebook 04 (endpoint verification) has been folded into Notebook 03 (Section 6) — it was a direct continuation of the deployment done there, not a distinct MLOps stage.
 
 ---
 
@@ -189,9 +186,6 @@ The application will be available at `http://localhost:8501`.
 relay and ngrok tunnel, then paste the printed `/predict` URL and the relay API key into
 the Scam Detector page's sidebar. Free ngrok URLs change each time the tunnel restarts, so
 this needs to be redone whenever Notebook 06 is re-run (e.g. before a demo or presentation).
-The baseline model's route is derived automatically from the same URL — it only returns
-results once Notebook 03 Section 7 has been run to deploy the baseline endpoint; until then
-the Champion vs Baseline panel shows a clear "not deployed yet" message rather than an error.
 
 ---
 
@@ -214,18 +208,16 @@ the Champion vs Baseline panel shows a clear "not deployed yet" message rather t
   set in the project proposal. Registered models are held at `PendingManualApproval`, so a
   team member must approve a model before it can be deployed.
 
-- **Deployment** — approved models are deployed to a SageMaker Serverless Endpoint that
+- **Deployment** — the approved model is deployed to a SageMaker Serverless Endpoint that
   accepts raw message text and returns a label and probability. Preprocessing is bundled
   with the model, so the endpoint applies the same TF-IDF vocabulary learned during training.
-  A second endpoint, deployed from a baseline (untuned) run of the same pipeline (Notebook
-  03, Section 7), lets the demo show champion vs baseline live inference side by side. A
-  FastAPI relay (Notebook 06), exposed over ngrok, sits between both endpoints and the
+  A FastAPI relay (Notebook 06), exposed over ngrok, sits between the endpoint and the
   Streamlit client so the client never needs AWS credentials — this mirrors the FastAPI +
   ngrok pattern taught for external endpoint access.
 
 - **Retraining trigger** — CSV files placed in a watched S3 prefix start the pipeline
-  automatically with that file as input. The trigger is a polling loop rather than a
-  production EventBridge/Lambda chain (see Known Limitations).
+  automatically with that file as input. The trigger is a notebook-driven check rather
+  than a production EventBridge/Lambda chain (see Known Limitations).
 
 ---
 
@@ -251,12 +243,9 @@ the project proposal but have not been evaluated at this stage.
 - **The FastAPI + ngrok relay is a temporary demo mechanism**, not a production deployment
   path. It must be running (in SageMaker Studio) for the Streamlit app to get live
   predictions, and the free ngrok URL changes every time the relay is restarted.
-- **The retraining trigger is a proof-of-concept.** It polls from a notebook, so it only
-  runs while that notebook is running, and its state is stored locally.
-- **The baseline endpoint (Notebook 03, Section 7) is a demo-only addition**, deployed
-  purely so the UI can show a live champion vs baseline comparison — it isn't part of the
-  production-facing serving path and can be deleted after a demo/presentation to avoid
-  leaving it running unnecessarily.
+- **The retraining trigger is a proof-of-concept.** The watch folder is checked from a
+  notebook cell rather than by an event-driven service, so a new file is picked up only
+  when that check is run, and the seen-file state is stored locally.
 
 ---
 

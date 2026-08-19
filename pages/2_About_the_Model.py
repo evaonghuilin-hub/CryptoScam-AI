@@ -31,18 +31,12 @@ st.markdown(
     """
 )
 
-st.subheader("Champion and Baseline Models")
+st.subheader("Model Selection")
 
 st.markdown(
     """
-    Two versions of the model are deployed, so the effect of tuning is visible live
-    rather than only in a report table:
-
-    - **Champion** — tuned logistic regression, `C=10.0`, test ROC-AUC 0.8908,
-      accuracy 77.51%, recall 76.7%, F1 0.7786. This is the model used for the main
-      Analysis Result.
-    - **Baseline** — untuned logistic regression, `C=1.0`, test ROC-AUC 0.8898. Shown
-      alongside the champion in the Champion vs Baseline panel for comparison.
+    The deployed model is a tuned logistic regression (`C=10.0`), test ROC-AUC 0.8908,
+    accuracy 77.51%, recall 76.7%, F1 0.7786.
 
     **Random Forest** was also evaluated (test ROC-AUC 0.86) but was not selected —
     its recall (52–56%) was well below logistic regression's, which matters more than

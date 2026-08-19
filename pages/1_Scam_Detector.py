@@ -8,6 +8,36 @@ from utils.indicators import detect_warning_signs
 
 FEEDBACK_EMAIL = "cryptoscam-ai-team03@gmail.com"  # placeholder address for demo purposes
 
+# Plain-English labels for the 15 engineered indicator features, so the explainability
+# panel reads as an explanation rather than as raw column names. Anything not in this
+# map is a TF-IDF term — i.e. an actual word or phrase from the message — and is shown
+# as the word itself.
+FEATURE_LABELS = {
+    "urgency_keyword_count": "Urgency language",
+    "guaranteed_return_keyword_count": "Guaranteed-return promises",
+    "countdown_phrase_count": "Countdown or deadline phrasing",
+    "exclamation_count": "Exclamation marks",
+    "urgency_score": "Overall urgency score",
+    "has_wallet_address": "Contains a crypto wallet address",
+    "has_url": "Contains a link",
+    "url_count": "Number of links",
+    "has_email": "Contains an email address",
+    "has_phone_number": "Contains a phone number",
+    "payment_keyword_count": "Payment or transfer requests",
+    "off_platform_keyword_count": "Requests to move to another platform",
+    "credential_keyword_count": "Requests for credentials or codes",
+    "capital_letter_ratio": "Proportion of capital letters",
+    "has_numeric_content": "Contains numbers",
+}
+
+
+def describe_feature(name):
+    """Return a human-readable description of a model feature. Engineered features get
+    their mapped label; anything else is a TF-IDF term, shown as the word itself."""
+    if name in FEATURE_LABELS:
+        return FEATURE_LABELS[name]
+    return f'the word "{name}"'
+
 
 def feedback_mailto(message, label, probability):
     """Build a mailto: link pre-filled with the message and prediction, so feedback
@@ -27,55 +57,59 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("🔍 Cryptocurrency Scam Detector")
-
-st.write(
-    """
-    Paste a cryptocurrency-related message below. The message is sent to the
-    deployed SageMaker champion model (via a FastAPI + ngrok relay) for a scam
-    probability, alongside a rule-based check for common warning signs. The
-    same message is also sent to the baseline (untuned) model, so the
-    improvement from tuning is visible live rather than only in a table.
-    """
+st.title(
+    "🔍 Cryptocurrency Scam Detector",
+    help=(
+        "Paste a cryptocurrency-related message below. The message is sent to the "
+        "deployed SageMaker model (via a FastAPI + ngrok relay) for a scam "
+        "probability, alongside a rule-based check for common warning signs."
+    ),
 )
 
-# Read any previously-saved values from the page URL (?relay_url=...&relay_api_key=...)
-# first, then fall back to the placeholder defaults. Storing these in the URL, not just
-# session_state, means the values survive a full app restart (e.g. Streamlit Community
-# Cloud redeploying after a git push) as long as the browser tab keeps the same link —
-# session_state alone is wiped whenever the server process restarts.
-if "relay_url" not in st.session_state:
-    st.session_state.relay_url = st.query_params.get(
-        "relay_url", "https://your-ngrok-url.ngrok-free.app/predict"
+DEFAULT_RELAY_URL = "https://your-ngrok-url.ngrok-free.app/predict"
+DEFAULT_RELAY_API_KEY = "team03-demo-key"
+
+# These are stored under plain session_state keys that are deliberately NEVER passed to a
+# widget as key=. Streamlit garbage-collects widget-bound session_state entries once the
+# widget stops being rendered — and this sidebar only exists on this page, so switching to
+# another page would wipe a widget-bound value and reset the field to the placeholder on
+# return. Plain keys are not garbage-collected, so the values survive page navigation.
+# The URL query params are read once on first load so a refresh or app restart can also
+# recover them (Streamlit's own page navigation drops the query string, so query params
+# alone are not enough).
+if "saved_relay_url" not in st.session_state:
+    st.session_state.saved_relay_url = st.query_params.get("relay_url", DEFAULT_RELAY_URL)
+if "saved_relay_api_key" not in st.session_state:
+    st.session_state.saved_relay_api_key = st.query_params.get(
+        "relay_api_key", DEFAULT_RELAY_API_KEY
     )
-if "relay_api_key" not in st.session_state:
-    st.session_state.relay_api_key = st.query_params.get("relay_api_key", "team03-demo-key")
 
 with st.sidebar:
     st.subheader("Model Endpoint Settings")
     st.caption(
         "Values from Notebook 06 (FastAPI + ngrok relay), Section 9. "
-        "The ngrok URL changes each time the relay is restarted. Saved in the page "
-        "URL so it survives switching pages, refreshing, or the app restarting."
+        "The ngrok URL changes each time the relay is restarted. Kept for the whole "
+        "browser session, so it survives switching between pages."
     )
     relay_url = st.text_input(
-        "Relay Predict URL (champion model)",
-        key="relay_url",
+        "Relay Predict URL",
+        value=st.session_state.saved_relay_url,
+        help="The full URL is saved even if the sidebar is too narrow to show it all — "
+        "click into the field and use Home/End to see the rest, or widen the sidebar "
+        "by dragging its right edge.",
     )
     relay_api_key = st.text_input(
         "Relay API Key",
-        key="relay_api_key",
+        value=st.session_state.saved_relay_api_key,
         type="password",
     )
-    # Keep the URL in sync so a copied/bookmarked link (or a page reload) restores these.
+
+    # Write whatever is currently in the fields back to the plain keys (survives page
+    # switches) and to the URL (survives a refresh or an app restart).
+    st.session_state.saved_relay_url = relay_url
+    st.session_state.saved_relay_api_key = relay_api_key
     st.query_params["relay_url"] = relay_url
     st.query_params["relay_api_key"] = relay_api_key
-    st.caption(
-        "The baseline model's URL is derived automatically from the champion "
-        "URL above (…/predict → …/predict/baseline) — no separate field needed. "
-        "Requires Notebook 03 Section 7's baseline endpoint to be deployed and Notebook 06's "
-        "relay restarted after it, or the baseline comparison will show an error."
-    )
 
     if st.button("Check Connection"):
         health_url = relay_url.rstrip("/")
@@ -105,8 +139,6 @@ SAMPLE_MESSAGES = [
     "pinned post in the group for details.",
     "Anyone else having trouble syncing their hardware wallet after the latest "
     "firmware update?",
-    # Subtler / borderline phrasing — softer signal than the messages above, useful
-    # for showing where the tuned champion and untuned baseline diverge most.
     "hey just a heads up, this promo for the new token airdrop closes tonight, "
     "thought you might want to grab it before it's gone.",
     "Our support team noticed unusual activity on your account. Please verify "
@@ -158,7 +190,7 @@ analyse_clicked = st.button(
 
 
 def call_relay(url, api_key, text):
-    """Call a relay /predict route. Returns (label, probability, top_features, error_message).
+    """Call the relay's /predict route. Returns (label, probability, top_features, error_message).
 
     top_features is a list of {feature, contribution, direction} dicts from the
     model's coefficient-based explanation (added to inference.py). Older deployed
@@ -205,51 +237,47 @@ if analyse_clicked:
     else:
         warning_signs = detect_warning_signs(message)
 
-        # Champion model: the deployed SageMaker Serverless Endpoint
-        # (iti113-team03-crypto-scam-detector) through the FastAPI + ngrok
-        # relay set up in Notebook 06, using the same {"text": ...} request
-        # and [{"prediction", "label", "probability"}] response shape as
-        # invoke_scam_detector() in Notebook 03 Section 6.
-        champ_label, champ_probability, champ_top_features, champ_error = call_relay(
+        # Deployed SageMaker Serverless Endpoint (iti113-team03-crypto-scam-detector)
+        # through the FastAPI + ngrok relay set up in Notebook 06, using the same
+        # {"text": ...} request and [{"prediction", "label", "probability"}] response
+        # shape as invoke_scam_detector() in Notebook 03 Section 6.
+        label, probability, top_features, error = call_relay(
             relay_url, relay_api_key, message
         )
-
-        # Baseline model: same relay, /predict/baseline route, forwarding to the
-        # untuned endpoint deployed by Notebook 03 Section 7 — for the live champion-vs-baseline
-        # comparison shown below, not the main Analysis Result.
-        if relay_url.rstrip("/").endswith("/predict"):
-            baseline_url = relay_url.rstrip("/")[: -len("/predict")] + "/predict/baseline"
-        else:
-            baseline_url = None
-
-        if baseline_url:
-            base_label, base_probability, base_top_features, base_error = call_relay(
-                baseline_url, relay_api_key, message
-            )
-        else:
-            base_label, base_probability, base_top_features = None, None, []
-            base_error = "Relay Predict URL does not end in /predict — could not derive the baseline route."
 
         st.markdown("---")
         st.subheader("Analysis Result")
 
-        if champ_error:
-            st.error(
-                "Could not get a prediction from the deployed model. "
-                "Check that Notebook 06's relay and ngrok tunnel are running, "
-                "and that the sidebar URL and API key are correct."
+        if error:
+            # The model is served through a temporary demo relay (Notebook 06's FastAPI +
+            # ngrok tunnel), which is only online while that notebook is running. Rather
+            # than presenting this as a crash, explain the limitation and fall back to the
+            # rule-based check below, which runs locally and needs no network access.
+            st.info(
+                "**The scam-detection model is not reachable right now, so this "
+                "message could not be scored.**\n\n"
+                "The model runs on a temporary demo endpoint that is only online while "
+                "the project's relay notebook is running, so this is expected outside a "
+                "live demo rather than a fault in the application.\n\n"
+                "The rule-based warning-sign check below does not depend on the model "
+                "and is still shown for this message."
             )
-            st.caption(champ_error)
+            with st.expander("Technical details"):
+                st.caption(error)
+                st.caption(
+                    "To reconnect: start Notebook 06's FastAPI relay and ngrok tunnel, "
+                    "then paste the new relay URL and API key into the sidebar."
+                )
 
         else:
-            risk_level = risk_level_for(champ_probability)
+            risk_level = risk_level_for(probability)
 
             result_col1, result_col2 = st.columns(2)
 
             with result_col1:
                 st.metric(
                     label="Estimated Scam Probability",
-                    value=f"{champ_probability:.0%}",
+                    value=f"{probability:.0%}",
                 )
 
             with result_col2:
@@ -258,7 +286,7 @@ if analyse_clicked:
                     value=risk_level,
                 )
 
-            st.caption(f"Model label: `{champ_label}`")
+            st.caption(f"Model label: `{label}`")
 
             if risk_level == "High":
                 st.error(
@@ -280,10 +308,10 @@ if analyse_clicked:
 
             st.link_button(
                 "📧 This prediction looks wrong — report it",
-                feedback_mailto(message, champ_label, champ_probability),
+                feedback_mailto(message, label, probability),
             )
 
-            if champ_top_features:
+            if top_features:
                 with st.expander("🔎 Why this prediction? (model explainability)"):
                     st.caption(
                         "The words and patterns that pushed the model's score most, based "
@@ -291,78 +319,65 @@ if analyse_clicked:
                         "This is a lightweight approximation for a linear model, not a "
                         "full SHAP-style explanation."
                     )
-                    for feat in champ_top_features:
-                        arrow = "🔺" if feat["direction"] == "scam" else "🔻"
+                    for feat in top_features:
+                        toward_scam = feat["direction"] == "scam"
+                        arrow = "🔺" if toward_scam else "🔻"
+                        toward = "more likely a scam" if toward_scam else "more likely legitimate"
                         st.write(
-                            f"{arrow} `{feat['feature']}` — pushed toward "
-                            f"**{feat['direction']}** (contribution: {feat['contribution']:+.3f})"
+                            f"{arrow} **{describe_feature(feat['feature'])}** — "
+                            f"pushed this message toward *{toward}*"
                         )
+                    st.caption(
+                        "Listed strongest first. Technical contribution values are in the "
+                        "table below."
+                    )
+                    st.dataframe(
+                        [
+                            {
+                                "Feature": describe_feature(f["feature"]),
+                                "Raw name": f["feature"],
+                                "Contribution": round(f["contribution"], 4),
+                                "Pushed toward": f["direction"],
+                            }
+                            for f in top_features
+                        ],
+                        use_container_width=True,
+                        hide_index=True,
+                    )
 
             st.session_state.analysis_history.insert(
                 0,
                 {
                     "Message": (message[:70] + "…") if len(message) > 70 else message,
-                    "Champion": f"{champ_label} ({champ_probability:.0%})",
-                    "Baseline": (
-                        f"{base_label} ({base_probability:.0%})"
-                        if base_label is not None
-                        else "—"
-                    ),
+                    "Prediction": f"{label} ({probability:.0%})",
                     "Risk Level": risk_level,
                 },
             )
 
-        st.subheader("Champion vs Baseline")
-
-        st.caption(
-            "Same message scored by both deployed models — the tuned champion "
-            "(logistic regression, C=10.0) and the untuned baseline (C=1.0) — to "
-            "show the effect of tuning live rather than only in the report's tables."
-        )
-
-        champ_col, base_col = st.columns(2)
-
-        with champ_col:
-            st.markdown("**Champion** (tuned, C=10.0)")
-            if champ_error:
-                st.caption(f"Unavailable: {champ_error}")
-            else:
-                st.metric("Scam Probability", f"{champ_probability:.0%}", label_visibility="visible")
-                st.caption(f"Label: `{champ_label}`")
-
-        with base_col:
-            st.markdown("**Baseline** (untuned, C=1.0)")
-            if base_error:
-                st.caption(f"Unavailable: {base_error}")
-                st.caption("Run Notebook 03 Section 7 to deploy the baseline endpoint, then restart Notebook 06's relay.")
-            else:
-                st.metric("Scam Probability", f"{base_probability:.0%}", label_visibility="visible")
-                st.caption(f"Label: `{base_label}`")
-
         st.subheader("Detected Warning Signs")
 
         st.caption(
-            "Rule-based keyword and pattern check, shown alongside the model "
-            "prediction for user-facing explanation."
+            "Rule-based keyword and pattern check. This runs locally and does not "
+            "depend on the model, so it is available even when the model endpoint is not."
         )
 
-        if not champ_error:
-            model_flagged_scam = champ_label.lower() == "scam"
+        if not error:
+            model_flagged_scam = label.lower() == "scam"
             if model_flagged_scam and warning_signs:
                 st.info(
-                    f"The model's **{champ_label}** prediction is consistent with "
+                    f"The model's **{label}** prediction is consistent with "
                     f"{len(warning_signs)} rule-based indicator "
                     f"{'category' if len(warning_signs) == 1 else 'categories'} found below."
                 )
             elif model_flagged_scam and not warning_signs:
                 st.warning(
-                    f"The model predicted **{champ_label}**, but no rule-based indicators "
+                    f"The model predicted **{label}**, but no rule-based indicators "
                     "were detected — this may reflect a subtler pattern in the message "
                     "text (e.g. TF-IDF wording) rather than an obvious keyword match."
                 )
             elif not model_flagged_scam and warning_signs:
                 st.warning(
-                    f"The model predicted **{champ_label}**, but some rule-based "
+                    f"The model predicted **{label}**, but some rule-based "
                     "indicators were still found below — worth a second look."
                 )
 
