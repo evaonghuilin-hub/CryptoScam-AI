@@ -39,17 +39,24 @@ st.write(
     """
 )
 
+# Read any previously-saved values from the page URL (?relay_url=...&relay_api_key=...)
+# first, then fall back to the placeholder defaults. Storing these in the URL, not just
+# session_state, means the values survive a full app restart (e.g. Streamlit Community
+# Cloud redeploying after a git push) as long as the browser tab keeps the same link —
+# session_state alone is wiped whenever the server process restarts.
 if "relay_url" not in st.session_state:
-    st.session_state.relay_url = "https://your-ngrok-url.ngrok-free.app/predict"
+    st.session_state.relay_url = st.query_params.get(
+        "relay_url", "https://your-ngrok-url.ngrok-free.app/predict"
+    )
 if "relay_api_key" not in st.session_state:
-    st.session_state.relay_api_key = "team03-demo-key"
+    st.session_state.relay_api_key = st.query_params.get("relay_api_key", "team03-demo-key")
 
 with st.sidebar:
     st.subheader("Model Endpoint Settings")
     st.caption(
         "Values from Notebook 06 (FastAPI + ngrok relay), Section 9. "
-        "The ngrok URL changes each time the relay is restarted. Kept in "
-        "session state so it survives switching between pages."
+        "The ngrok URL changes each time the relay is restarted. Saved in the page "
+        "URL so it survives switching pages, refreshing, or the app restarting."
     )
     relay_url = st.text_input(
         "Relay Predict URL (champion model)",
@@ -60,6 +67,9 @@ with st.sidebar:
         key="relay_api_key",
         type="password",
     )
+    # Keep the URL in sync so a copied/bookmarked link (or a page reload) restores these.
+    st.query_params["relay_url"] = relay_url
+    st.query_params["relay_api_key"] = relay_api_key
     st.caption(
         "The baseline model's URL is derived automatically from the champion "
         "URL above (…/predict → …/predict/baseline) — no separate field needed. "
