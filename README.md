@@ -29,8 +29,9 @@ This project was developed as part of the **Nanyang Polytechnic Specialist Diplo
 - TF-IDF text vectorisation plus 15 engineered indicator features
 - Risk level assessment (Low / Medium / High) with a scam probability score
 - Suspicious keyword and pattern detection for user-facing explanation
-- Per-prediction explainability: the endpoint returns the features that contributed
-  most to each score (feature value x model coefficient), shown in plain English in the app
+- Per-prediction explainability at the API level: the endpoint returns the features that
+  contributed most to each score (feature value x model coefficient). The Streamlit app does
+  not display these, showing the plain-language warning signs instead
 - User feedback links for reporting incorrect predictions
 - Responsible AI guidance and referral to official reporting channels
 - Interactive Streamlit interface
@@ -189,6 +190,18 @@ this needs to be redone whenever Notebook 06 is re-run (e.g. before a demo or pr
 
 ---
 
+## Models Evaluated
+
+Logistic Regression and Random Forest were trained and compared as baselines, followed by
+a hyperparameter sweep of 6 Logistic Regression candidates (regularisation strength and
+penalty type) and 5 Random Forest candidates (tree count, depth, leaf size). The best
+Logistic Regression candidate (`C=10.0`, `penalty=l2`, `solver=lbfgs`) reached test
+ROC-AUC 0.8908 versus the best Random Forest candidate's 0.86, and is the configuration
+used by the SageMaker Pipeline. Naive Bayes, SVM and neural networks were considered in
+the project proposal but have not been evaluated at this stage.
+
+---
+
 ## MLOps Components
 
 - **Data pipeline** — the raw dataset is hashed with SHA256 and stored under a version
@@ -219,17 +232,6 @@ this needs to be redone whenever Notebook 06 is re-run (e.g. before a demo or pr
   automatically with that file as input. The trigger is a notebook-driven check rather
   than a production EventBridge/Lambda chain (see Known Limitations).
 
----
-
-## Models Evaluated
-
-Logistic Regression and Random Forest were trained and compared as baselines, followed by
-a hyperparameter sweep of 6 Logistic Regression candidates (regularisation strength and
-penalty type) and 5 Random Forest candidates (tree count, depth, leaf size). The best
-Logistic Regression candidate (`C=10.0`, `penalty=l2`, `solver=lbfgs`) reached test
-ROC-AUC 0.8908 versus the best Random Forest candidate's 0.86, and is the configuration
-used by the SageMaker Pipeline. Naive Bayes, SVM and neural networks were considered in
-the project proposal but have not been evaluated at this stage.
 
 ---
 
@@ -271,7 +273,6 @@ Users should note that:
 - Event-driven retraining trigger (EventBridge and Lambda)
 - Production monitoring for model drift and platform-level recall
 - Multi-language scam detection
-- Screenshot OCR support
 - LLM-assisted scam explanation
 
 ---
