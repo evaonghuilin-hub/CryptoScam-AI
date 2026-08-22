@@ -8,36 +8,6 @@ from utils.indicators import detect_warning_signs
 
 FEEDBACK_EMAIL = "cryptoscam-ai-team03@gmail.com"  # placeholder address for demo purposes
 
-# Plain-English labels for the 15 engineered indicator features, so the explainability
-# panel reads as an explanation rather than as raw column names. Anything not in this
-# map is a TF-IDF term — i.e. an actual word or phrase from the message — and is shown
-# as the word itself.
-FEATURE_LABELS = {
-    "urgency_keyword_count": "Urgency language",
-    "guaranteed_return_keyword_count": "Guaranteed-return promises",
-    "countdown_phrase_count": "Countdown or deadline phrasing",
-    "exclamation_count": "Exclamation marks",
-    "urgency_score": "Overall urgency score",
-    "has_wallet_address": "Contains a crypto wallet address",
-    "has_url": "Contains a link",
-    "url_count": "Number of links",
-    "has_email": "Contains an email address",
-    "has_phone_number": "Contains a phone number",
-    "payment_keyword_count": "Payment or transfer requests",
-    "off_platform_keyword_count": "Requests to move to another platform",
-    "credential_keyword_count": "Requests for credentials or codes",
-    "capital_letter_ratio": "Proportion of capital letters",
-    "has_numeric_content": "Contains numbers",
-}
-
-
-def describe_feature(name):
-    """Return a human-readable description of a model feature. Engineered features get
-    their mapped label; anything else is a TF-IDF term, shown as the word itself."""
-    if name in FEATURE_LABELS:
-        return FEATURE_LABELS[name]
-    return f'the word "{name}"'
-
 
 def feedback_mailto(message, label, probability):
     """Build a mailto: link pre-filled with the message and prediction, so feedback
@@ -190,13 +160,7 @@ analyse_clicked = st.button(
 
 
 def call_relay(url, api_key, text):
-    """Call the relay's /predict route. Returns (label, probability, top_features, error_message).
-
-    top_features is a list of {feature, contribution, direction} dicts from the
-    model's coefficient-based explanation (added to inference.py). Older deployed
-    endpoints won't include this field yet, so it defaults to an empty list rather
-    than raising, and callers should treat an empty list as "not available" rather
-    than "no signal"."""
+    """Call the relay's /predict route. Returns (label, probability, error_message)."""
     try:
         response = requests.post(
             url,
@@ -208,16 +172,16 @@ def call_relay(url, api_key, text):
             timeout=30,
         )
     except Exception as e:
-        return None, None, [], f"Could not reach the model relay: {e}"
+        return None, None, f"Could not reach the model relay: {e}"
 
     if response.status_code != 200:
-        return None, None, [], f"Relay returned status {response.status_code}: {response.text}"
+        return None, None, f"Relay returned status {response.status_code}: {response.text}"
 
     try:
         result = response.json()[0]
-        return result["label"], result["probability"], result.get("top_features", []), None
+        return result["label"], result["probability"], None
     except Exception as e:
-        return None, None, [], f"Unexpected response shape from relay: {e}"
+        return None, None, f"Unexpected response shape from relay: {e}"
 
 
 def risk_level_for(probability):
@@ -241,7 +205,7 @@ if analyse_clicked:
         # through the FastAPI + ngrok relay set up in Notebook 06, using the same
         # {"text": ...} request and [{"prediction", "label", "probability"}] response
         # shape as invoke_scam_detector() in Notebook 03 Section 6.
-        label, probability, top_features, error = call_relay(
+        label, probability, error = call_relay(
             relay_url, relay_api_key, message
         )
 
@@ -310,40 +274,6 @@ if analyse_clicked:
                 "📧 This prediction looks wrong — report it",
                 feedback_mailto(message, label, probability),
             )
-
-            if top_features:
-                with st.expander("🔎 Why this prediction? (model explainability)"):
-                    st.caption(
-                        "The words and patterns that pushed the model's score most, based "
-                        "on each feature's value multiplied by its learned coefficient. "
-                        "This is a lightweight approximation for a linear model, not a "
-                        "full SHAP-style explanation."
-                    )
-                    for feat in top_features:
-                        toward_scam = feat["direction"] == "scam"
-                        arrow = "🔺" if toward_scam else "🔻"
-                        toward = "more likely a scam" if toward_scam else "more likely legitimate"
-                        st.write(
-                            f"{arrow} **{describe_feature(feat['feature'])}** — "
-                            f"pushed this message toward *{toward}*"
-                        )
-                    st.caption(
-                        "Listed strongest first. Technical contribution values are in the "
-                        "table below."
-                    )
-                    st.dataframe(
-                        [
-                            {
-                                "Feature": describe_feature(f["feature"]),
-                                "Raw name": f["feature"],
-                                "Contribution": round(f["contribution"], 4),
-                                "Pushed toward": f["direction"],
-                            }
-                            for f in top_features
-                        ],
-                        use_container_width=True,
-                        hide_index=True,
-                    )
 
             st.session_state.analysis_history.insert(
                 0,
